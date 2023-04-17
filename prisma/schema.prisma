@@ -21,7 +21,8 @@ model Project {
 }
 
 model Image {
-  id        String    @id @default(uuid())
+  id        Int       @id @default(autoincrement())
+  path      String
   project   Project   @relation(fields: [projectId], references: [id])
   projectId Int
   createdAt DateTime  @default(now())

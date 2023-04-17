@@ -60,7 +60,6 @@ app.post<{ Body: CreateProjectRequest }>(
         break;
       }
     }
-    console.log(description.value, description);
 
     // console.log(description, title, files, '---BODY---');
 
@@ -78,8 +77,6 @@ app.post<{ Body: CreateProjectRequest }>(
       };
     });
 
-    console.log(urls, '---URLS---');
-
     await prisma.project.create({
       data: {
         title: title.value,
@@ -90,7 +87,7 @@ app.post<{ Body: CreateProjectRequest }>(
       },
     });
 
-    return reply.code(201).send({});
+    return reply.code(201).send({ message: 'Project created' });
   }
 );
 
