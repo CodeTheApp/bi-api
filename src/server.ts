@@ -5,7 +5,12 @@ import multipart from '@fastify/multipart';
 import { PrismaClient } from '@prisma/client';
 import Fastify from 'fastify';
 
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3';
+import { CreateProjectRequest } from './types/types';
 
 const app = Fastify();
 const prisma = new PrismaClient();
@@ -105,33 +110,49 @@ app.post<{ Body: CreateProjectRequest }>(
   }
 );
 
+app.delete<{ Params: { id: string } }>('/projects/:id', async (request) => {
+  const { id } = request.params;
+
+  const project = await prisma.project.delete({
+    where: {
+      id: +id,
+    },
+  });
+
+  const images = await prisma.image.findMany({
+    where: {
+      projectId: +id,
+    },
+  });
+
+  for (const image of images) {
+    const command = new DeleteObjectCommand({
+      Bucket: env.get('S3_BUCKET_NAME').required().asString(),
+      Key: encodeURI(image.path),
+    });
+    try {
+      await client.send(command);
+    } catch (err) {
+      console.log(err);
+      break;
+    }
+  }
+
+  const deleteImages = await prisma.image.deleteMany({
+    where: {
+      projectId: +id,
+    },
+  });
+
+  return project && deleteImages
+    ? { message: 'Project deleted' }
+    : { message: 'Project not found' };
+});
+
+// ------------  START OF SERVER  ------------
+
 app
   .listen({ port: process.env.PORT ? Number(process.env.PORT) : 3333 })
   .then((address) => {
     console.log(`Server listening at ${address}`);
   });
-
-type CreateProjectRequest = {
-  title: MultipartField;
-  description: MultipartField;
-  files: MultipartFile[];
-};
-
-type MultipartFile = {
-  type: string;
-  fieldname: string;
-  filename: string;
-  encoding: string;
-  mimetype: string;
-  toBuffer: () => Promise<Buffer>;
-};
-
-type MultipartField = {
-  type: string;
-  fieldname: string;
-  mimetype: string;
-  encoding: string;
-  value: string;
-  fieldnameTruncated: boolean;
-  valueTruncated: boolean;
-};
