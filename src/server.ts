@@ -71,7 +71,7 @@ app.post<{ Body: CreateProjectRequest }>(
       //   timestamp + image.filename.toLocaleLowerCase().split(' ').join('+');
 
       return {
-        url: `https://${env
+        path: `https://${env
           .get('S3_BUCKET_NAME')
           .required()
           .asString()}.s3.amazonaws.com/${image.filename}`,
