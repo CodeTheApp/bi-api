@@ -3,7 +3,7 @@ import * as env from 'env-var';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import { PrismaClient } from '@prisma/client';
-import Fastify, { FastifyRequest } from 'fastify';
+import Fastify from 'fastify';
 
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
@@ -25,16 +25,33 @@ app.register(cors);
 app.register(multipart, { attachFieldsToBody: true });
 
 app.get('/projects', async () => {
-  const projects = await prisma.project.findMany();
+  const projects = await prisma.project.findMany({
+    include: {
+      images: true,
+    },
+  });
+
   return { projects };
 });
 
-app.get<{ Params: { id: number } }>('/projects/:id', async (request, reply) => {
+app.get<{ Params: { id: string } }>('/image/:id', async (request, reply) => {
+  const { id } = request.params;
+
+  const images = await prisma.image.findMany({
+    where: {
+      projectId: +id,
+    },
+  });
+
+  return images;
+});
+
+app.get<{ Params: { id: string } }>('/projects/:id', async (request, reply) => {
   const { id } = request.params;
 
   const project = await prisma.project.findUnique({
     where: {
-      id,
+      id: +id,
     },
   });
 
@@ -46,10 +63,33 @@ app.post<{ Body: CreateProjectRequest }>(
   async (request, reply) => {
     const { description, title, files } = request.body;
 
+    const urls = files.map((image) => {
+      return {
+        path: `https://${env
+          .get('S3_BUCKET_NAME')
+          .required()
+          .asString()}.s3.amazonaws.com/${encodeURI(image.filename)}`,
+      };
+    });
+
+    const project = await prisma.project.create({
+      data: {
+        title: title.value,
+        description: description.value,
+        images: {
+          create: urls,
+        },
+      },
+    });
+
+    if (!project) {
+      return reply.code(400).send({ message: 'Error creating project' });
+    }
+
     for (const file of files) {
       const command = new PutObjectCommand({
         Bucket: env.get('S3_BUCKET_NAME').required().asString(),
-        Key: file.filename,
+        Key: encodeURI(file.filename),
         Body: await file.toBuffer(),
         ContentType: file.mimetype,
       });
@@ -60,32 +100,6 @@ app.post<{ Body: CreateProjectRequest }>(
         break;
       }
     }
-
-    // console.log(description, title, files, '---BODY---');
-
-    const urls = files.map((image) => {
-      // console.log(image, '---IMAGE---');
-      // const timestamp = new Date().getTime();
-      // const filename =
-      //   timestamp + image.filename.toLocaleLowerCase().split(' ').join('+');
-
-      return {
-        path: `https://${env
-          .get('S3_BUCKET_NAME')
-          .required()
-          .asString()}.s3.amazonaws.com/${image.filename}`,
-      };
-    });
-
-    await prisma.project.create({
-      data: {
-        title: title.value,
-        description: description.value,
-        images: {
-          create: urls,
-        },
-      },
-    });
 
     return reply.code(201).send({ message: 'Project created' });
   }
