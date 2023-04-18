@@ -10,7 +10,8 @@ import {
   PutObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
-import { CreateProjectRequest } from './types/types';
+import { CreateProjectRequest } from './v1/types/types';
+import { getFileName } from './v1/helpers';
 
 const app = Fastify();
 const prisma = new PrismaClient();
@@ -27,7 +28,10 @@ const client = new S3Client({
 });
 
 app.register(cors);
-app.register(multipart, { attachFieldsToBody: true });
+app.register(multipart, {
+  attachFieldsToBody: true,
+  limits: { fileSize: 100000000 },
+});
 
 app.get('/projects', async () => {
   const projects = await prisma.project.findMany({
@@ -60,7 +64,9 @@ app.get<{ Params: { id: string } }>('/projects/:id', async (request, reply) => {
     },
   });
 
-  return project ? reply.code(200).send(project) : reply.code(404).send();
+  return project
+    ? reply.code(200).send(project)
+    : reply.code(404).send({ message: 'Project not found' });
 });
 
 app.post<{ Body: CreateProjectRequest }>(
@@ -74,6 +80,7 @@ app.post<{ Body: CreateProjectRequest }>(
           .get('S3_BUCKET_NAME')
           .required()
           .asString()}.s3.amazonaws.com/${encodeURI(image.filename)}`,
+        filename: encodeURI(image.filename),
       };
     });
 
@@ -110,44 +117,92 @@ app.post<{ Body: CreateProjectRequest }>(
   }
 );
 
-app.delete<{ Params: { id: string } }>('/projects/:id', async (request) => {
-  const { id } = request.params;
+app.delete<{ Params: { id: string } }>(
+  '/projects/:id',
+  async (request, reply) => {
+    const { id } = request.params;
 
-  const project = await prisma.project.delete({
-    where: {
-      id: +id,
-    },
-  });
+    const projectfind = await prisma.project.findUnique({
+      where: {
+        id: +id,
+      },
+    });
 
-  const images = await prisma.image.findMany({
-    where: {
-      projectId: +id,
-    },
-  });
+    if (!projectfind) {
+      return reply.code(404).send({ message: 'Project not found' });
+    }
 
-  for (const image of images) {
+    const images = await prisma.image.findMany({
+      where: {
+        projectId: +id,
+      },
+    });
+
+    for (const image of images) {
+      const command = new DeleteObjectCommand({
+        Bucket: env.get('S3_BUCKET_NAME').required().asString(),
+        Key: encodeURI(image.path),
+      });
+      try {
+        await client.send(command);
+      } catch (err) {
+        console.log(err);
+        break;
+      }
+    }
+
+    const deleteProject = await prisma.project.delete({
+      where: {
+        id: +id,
+      },
+    });
+
+    return deleteProject
+      ? reply.code(202).send({ message: 'Project deleted' })
+      : reply.code(400).send({ message: 'Project not found' });
+  }
+);
+
+// route to delete image from project by id
+app.delete<{ Params: { id: string } }>(
+  '/image/delete/:id',
+  async (request, reply) => {
+    const { id } = request.params;
+
+    const image = await prisma.image.findUnique({
+      where: {
+        id: +id,
+      },
+    });
+
+    if (!image) {
+      return reply.code(202).send({ message: 'Image not found' });
+    }
+
     const command = new DeleteObjectCommand({
       Bucket: env.get('S3_BUCKET_NAME').required().asString(),
-      Key: encodeURI(image.path),
+      Key: encodeURI(image.filename),
     });
+
+    console.log(command);
+
     try {
       await client.send(command);
     } catch (err) {
       console.log(err);
-      break;
     }
+
+    const deleteImage = await prisma.image.delete({
+      where: {
+        id: +id,
+      },
+    });
+
+    return deleteImage
+      ? reply.code(202).send({ message: 'Image deleted' })
+      : reply.code(400).send({ message: 'Image not found' });
   }
-
-  const deleteImages = await prisma.image.deleteMany({
-    where: {
-      projectId: +id,
-    },
-  });
-
-  return project && deleteImages
-    ? { message: 'Project deleted' }
-    : { message: 'Project not found' };
-});
+);
 
 // ------------  START OF SERVER  ------------
 

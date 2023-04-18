@@ -23,7 +23,8 @@ model Project {
 model Image {
   id        Int       @id @default(autoincrement())
   path      String
-  project   Project   @relation(fields: [projectId], references: [id])
+  filename  String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId Int
   createdAt DateTime  @default(now())
   deletedAt DateTime?
