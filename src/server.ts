@@ -152,7 +152,7 @@ app.delete<{ Params: { id: string } }>('/projects/:id', async (request) => {
 // ------------  START OF SERVER  ------------
 
 app
-  .listen({ port: process.env.PORT ? Number(process.env.PORT) : 3333 })
+  .listen({ port: process.env.PORT ? Number(process.env.PORT) : 80 })
   .then((address) => {
     console.log(`Server listening at ${address}`);
   });
