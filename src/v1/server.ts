@@ -10,8 +10,8 @@ import {
   PutObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
-import { CreateProjectRequest } from './v1/types/types';
-import { getFileName } from './v1/helpers';
+import { CreateProjectRequest } from './types/types';
+import { getFileName, getQueryStrings } from './helpers';
 
 const app = Fastify();
 const prisma = new PrismaClient();
@@ -33,28 +33,20 @@ app.register(multipart, {
   limits: { fileSize: 100000000 },
 });
 
-app.get('/projects', async () => {
+// ------------- LIST PROJECT BY ID - WITH NESTED IMAGES ARRAY WHEN HAS IMAGES TRUE ON ROUTE --------------
+app.get('/projects', async (request, reply) => {
+  const query = getQueryStrings(request.url);
+
   const projects = await prisma.project.findMany({
-    include: {
-      images: true,
-    },
+    include: query.images ? { images: true } : undefined,
   });
 
-  return { projects };
+  return projects
+    ? reply.code(200).send({ projects })
+    : reply.code(404).send({ message: 'Are no projects to show!' });
 });
 
-app.get<{ Params: { id: string } }>('/image/:id', async (request, reply) => {
-  const { id } = request.params;
-
-  const images = await prisma.image.findMany({
-    where: {
-      projectId: +id,
-    },
-  });
-
-  return images;
-});
-
+// ------------- LIST PROJECT BY ID  --------------
 app.get<{ Params: { id: string } }>('/projects/:id', async (request, reply) => {
   const { id } = request.params;
 
@@ -69,6 +61,23 @@ app.get<{ Params: { id: string } }>('/projects/:id', async (request, reply) => {
     : reply.code(404).send({ message: 'Project not found' });
 });
 
+// ------------- LIST IMAGES BY PROJECT ID --------------
+app.get<{ Params: { projectId: string } }>(
+  '/image/:projectId',
+  async (request, reply) => {
+    const { projectId } = request.params;
+
+    const images = await prisma.image.findMany({
+      where: {
+        projectId: +projectId,
+      },
+    });
+
+    return images;
+  }
+);
+
+// ------------- CREATE PROJECT --------------
 app.post<{ Body: CreateProjectRequest }>(
   '/projects',
   async (request, reply) => {
@@ -117,6 +126,50 @@ app.post<{ Body: CreateProjectRequest }>(
   }
 );
 
+// ------------- UPDATE PROJETO - title and description --------------
+app.put<{ Params: { id: string }; Body: CreateProjectRequest }>(
+  '/projects/:id',
+  async (request, reply) => {
+    const { id } = request.params;
+
+    const data = await prisma.project.findUnique({
+      where: {
+        id: +id,
+      },
+    });
+
+    if (!data) {
+      return reply.code(404).send({ message: 'Project not found' });
+    }
+
+    const setPayload = (data: CreateProjectRequest) => {
+      const payload: any = {};
+
+      if (data.title) {
+        payload.title = data.title.value;
+      }
+
+      if (data.description) {
+        payload.description = data.description.value;
+      }
+
+      return payload;
+    };
+
+    const updatedProject = await prisma.project.update({
+      where: {
+        id: +id,
+      },
+      data: setPayload(request.body),
+    });
+
+    return updatedProject
+      ? reply.code(200).send(updatedProject)
+      : reply.code(400).send({ message: 'Project not found' });
+  }
+);
+
+// ------------- DELETE PROJECT BY ID  --------------
 app.delete<{ Params: { id: string } }>(
   '/projects/:id',
   async (request, reply) => {
@@ -163,7 +216,7 @@ app.delete<{ Params: { id: string } }>(
   }
 );
 
-// route to delete image from project by id
+// ------------- DELETE IMAGE BY ID --------------
 app.delete<{ Params: { id: string } }>(
   '/image/delete/:id',
   async (request, reply) => {
@@ -205,7 +258,6 @@ app.delete<{ Params: { id: string } }>(
 );
 
 // ------------  START OF SERVER  ------------
-
 app
   .listen({ port: process.env.PORT ? Number(process.env.PORT) : 80 })
   .then((address) => {
