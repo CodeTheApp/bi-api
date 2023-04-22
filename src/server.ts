@@ -141,7 +141,7 @@ app.delete<{ Params: { id: string } }>(
     for (const image of images) {
       const command = new DeleteObjectCommand({
         Bucket: env.get('S3_BUCKET_NAME').required().asString(),
-        Key: encodeURI(image.path),
+        Key: image.filename,
       });
       try {
         await client.send(command);
