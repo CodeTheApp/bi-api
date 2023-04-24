@@ -11,7 +11,7 @@ import {
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { CreateProjectRequest } from './types/types';
-import { getFileName, getQueryStrings } from './helpers';
+import { getQueryStrings } from './helpers';
 
 const app = Fastify();
 const prisma = new PrismaClient();
