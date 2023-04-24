@@ -6,15 +6,26 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
 model Project {
-  id          String    @id @default(uuid())
+  id          Int       @id @unique @default(autoincrement())
   title       String
   description String?
+  images      Image[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
+}
+
+model Image {
+  id        Int       @id @default(autoincrement())
+  path      String
+  filename  String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId Int
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
 }
